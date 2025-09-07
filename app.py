@@ -42,7 +42,7 @@ def download_and_trim_youtube(video_url, duration=30):
 # تفريغ الصوت باستخدام faster-whisper
 # -------------------
 def transcribe_video(video_path):
-    model = WhisperModel("base")
+    model = WhisperModel("tiny")
     segments, _ = model.transcribe(video_path, beam_size=5)
     transcript = " ".join([seg.text for seg in segments])
     return transcript
