@@ -4,5 +4,6 @@ openai>=1.30.0
 faster-whisper==1.2.0
 numpy>=2.0.0
 requests==2.31.0
-pytube>=15.0.0  # On utilise >= pour obtenir les dernières corrections
-gunicorn       # Serveur de production pour Flask
+# Install the latest version of pytube directly from the source
+git+https://github.com/pytube/pytube.git
+gunicorn
