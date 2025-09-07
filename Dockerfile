@@ -19,4 +19,5 @@ COPY . .
 # Command to run your app
 # ... all other lines above
 # ... all other lines above
-CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 app:app
+# ... toutes les autres lignes
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
