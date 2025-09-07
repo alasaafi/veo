@@ -2,7 +2,7 @@ from flask import Flask, render_template, request
 import os, subprocess, tempfile
 from openai import OpenAI
 from faster_whisper import WhisperModel
-from pytube import YouTube
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -10,22 +10,27 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 MODEL = "openai/gpt-4o-mini"
 
 # -------------------
-# تحميل الفيديو وقصه باستخدام pytube
-# يدعم Youtube Shorts
+# تحميل الفيديو وقصه باستخدام yt-dlp as a library
 # -------------------
 def download_and_trim_youtube(video_url, duration=30):
     with tempfile.TemporaryDirectory() as tmpdir:
-        video_path = os.path.join(tmpdir, "video.mp4")
+        video_path_template = os.path.join(tmpdir, "video.%(ext)s")
         short_path = os.path.join(tmpdir, "video_short.mp4")
 
-        # تحميل الفيديو باستخدام pytube
-        yt = YouTube(video_url)
-        stream = yt.streams.filter(file_extension="mp4", progressive=True).order_by("resolution").desc().first()
-        stream.download(output_path=tmpdir, filename="video.mp4")
+        # Define yt-dlp options as a Python dictionary
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': video_path_template,
+        }
 
-        # قص الفيديو باستخدام ffmpeg
-        cmd = ["ffmpeg", "-y", "-i", video_path, "-t", str(duration), "-c", "copy", short_path]
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Download the video using the library
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            downloaded_video_path = ydl.prepare_filename(info)
+
+        # Trim the video using ffmpeg (this part remains the same)
+        trim_cmd = ["ffmpeg", "-y", "-i", downloaded_video_path, "-t", str(duration), "-c", "copy", short_path]
+        subprocess.run(trim_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if not os.path.exists(short_path):
             raise FileNotFoundError("Failed to create the short video.")
@@ -36,7 +41,7 @@ def download_and_trim_youtube(video_url, duration=30):
 # تفريغ الصوت باستخدام faster-whisper
 # -------------------
 def transcribe_video(video_path):
-    model = WhisperModel("base")  # يمكن تغيير الحجم "small", "medium", "large-v2"
+    model = WhisperModel("base")
     segments, _ = model.transcribe(video_path, beam_size=5)
     transcript = " ".join([seg.text for seg in segments])
     return transcript
