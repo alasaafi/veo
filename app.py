@@ -17,10 +17,11 @@ def download_and_trim_youtube(video_url, duration=30):
         video_path_template = os.path.join(tmpdir, "video.%(ext)s")
         short_path = os.path.join(tmpdir, "video_short.mp4")
 
-        # Define yt-dlp options as a Python dictionary
+        # Define yt-dlp options, now including the cookie file
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': video_path_template,
+            'cookiefile': 'cookies.txt',  # <-- This is the new line
         }
 
         # Download the video using the library
@@ -28,7 +29,7 @@ def download_and_trim_youtube(video_url, duration=30):
             info = ydl.extract_info(video_url, download=True)
             downloaded_video_path = ydl.prepare_filename(info)
 
-        # Trim the video using ffmpeg (this part remains the same)
+        # Trim the video using ffmpeg
         trim_cmd = ["ffmpeg", "-y", "-i", downloaded_video_path, "-t", str(duration), "-c", "copy", short_path]
         subprocess.run(trim_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
