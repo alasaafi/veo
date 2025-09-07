@@ -17,4 +17,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Command to run your app
-CMD ["gunicorn", "app:app"]
+# ... all other lines above
+CMD ["gunicorn", "--timeout", "120", "app:app"]
