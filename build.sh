@@ -2,5 +2,6 @@
 # exit on error
 set -o errexit
 
-# Installer ffmpeg
-apt-get update && apt-get install -y ffmpeg
+# Use sudo for admin privileges
+sudo apt-get update 
+sudo apt-get install -y ffmpeg
