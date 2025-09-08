@@ -1,63 +1,80 @@
 from flask import Flask, render_template, request, jsonify
-import os, subprocess, tempfile
+import os
+import subprocess
+import tempfile
+import base64
+import glob
 from openai import OpenAI
 import yt_dlp
-import assemblyai as aai
 
 app = Flask(__name__)
 
-# --- API Key Configuration ---
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-aai.settings.api_key = os.environ.get("ASSEMBLYAI_API_KEY")
-
 MODEL = "openai/gpt-4o-mini"
 
-def process_video_and_generate_prompt(video_url):
+def analyze_video_frames(video_url):
     """
-    Downloads, trims, and uses AssemblyAI to transcribe a video, 
-    then generates a prompt.
+    Downloads a video, extracts frames, and uses a vision model to generate a prompt.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        video_path_template = os.path.join(tmpdir, "video.%(ext)s")
-        short_path = os.path.join(tmpdir, "video_short.mp4")
-
-        # --- Download and Trim (Same as before) ---
+        # --- 1. Download Video ---
+        video_path = os.path.join(tmpdir, "video.mp4")
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': video_path_template,
-            'cookiefile': 'cookies.txt',
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': video_path,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
-            downloaded_video_path = ydl.prepare_filename(info)
+            ydl.download([video_url])
 
-        trim_cmd = ["ffmpeg", "-y", "-i", downloaded_video_path, "-t", "30", short_path]
-        subprocess.run(trim_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # --- 2. Extract Frames ---
+        frames_dir = os.path.join(tmpdir, "frames")
+        os.makedirs(frames_dir)
+        # Extracts 1 frame every 5 seconds for a total of 6 frames from a 30s clip
+        ffmpeg_cmd = [
+            "ffmpeg", "-i", video_path, "-vf", "fps=1/5", 
+            "-t", "30", f"{frames_dir}/frame-%03d.png"
+        ]
+        subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # --- Transcription with AssemblyAI (New) ---
-        transcriber = aai.Transcriber()
-        transcript = transcriber.transcribe(short_path)
-
-        if transcript.status == aai.TranscriptStatus.error:
-            raise Exception(f"AssemblyAI Error: {transcript.error}")
+        # --- 3. Encode Frames and Prepare for AI ---
+        base64_images = []
+        # Sort frames to maintain chronological order
+        frame_files = sorted(glob.glob(os.path.join(frames_dir, "*.png")))
         
-        transcript_text = transcript.text
+        for frame_path in frame_files:
+            with open(frame_path, "rb") as image_file:
+                base64_images.append(base64.b64encode(image_file.read()).decode("utf-8"))
 
-        # --- Keyword Extraction and Prompt Generation (Same as before) ---
-        words = transcript_text.split()
-        freq = {}
-        for w in words: freq[w] = freq.get(w, 0) + 1
-        keywords = sorted(freq, key=freq.get, reverse=True)[:15]
+        if not base64_images:
+            raise ValueError("No frames were extracted from the video.")
 
+        # --- 4. Analyze with Vision Model ---
         client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
-        keywords_str = ", ".join(keywords)
-        instruction = f"Create a single, detailed Veo 3 cinematic prompt based ONLY on these keywords: {keywords_str}."
+        
+        # Construct the message payload for the multimodal model
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "These are frames from a video. Describe the scene, action, and style. Based on this visual information, create a single, detailed Veo 3 cinematic prompt.",
+                    }
+                ]
+                + [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img}"},
+                    }
+                    for img in base64_images
+                ],
+            }
+        ]
+        
         response = client.chat.completions.create(
             model=MODEL,
-            messages=[
-                {"role": "system", "content": "You are an AI that generates high-quality Veo 3 prompts."},
-                {"role": "user", "content": instruction},
-            ],
+            messages=messages,
+            max_tokens=300,
         )
         return response.choices[0].message.content.strip()
 
@@ -72,8 +89,8 @@ def generate():
         return jsonify({"error": "Please provide a URL"}), 400
     
     try:
-        prompt = process_video_and_generate_prompt(video_url)
+        prompt = analyze_video_frames(video_url)
         return jsonify({"prompt": prompt})
     except Exception as e:
         print(f"An error occurred: {e}")
-        return jsonify({"error": "Failed to process video. Please check the URL or try another."}), 500
+        return jsonify({"error": "Failed to process video. It might be private, invalid, or too short."}), 500

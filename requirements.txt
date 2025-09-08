@@ -3,5 +3,4 @@ gunicorn
 yt-dlp
 openai
 requests
-assemblyai
-gevent
+Pillow
