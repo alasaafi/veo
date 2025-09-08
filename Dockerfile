@@ -8,6 +8,5 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-
-# A simple command is enough for this new, lightweight app
-CMD gunicorn --bind 0._0.0:$PORT --timeout 120 app:app
+  
+CMD gunicorn --bind 0.0.0.0:$PORT --timeout 120 app:app
